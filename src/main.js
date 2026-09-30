@@ -4,6 +4,7 @@ import { GAME_CONFIG, SPEECH_LINES } from './config.js';
 import { createWorld } from './world.js';
 import { createSpawner, getLaneX } from './obstacles.js';
 import { createPlayerModel } from './models.js';
+import { createAudioEngine, RUN_AUDIO_MODE } from './audio.js';
 
 const MIN_LANE_INDEX = -1;
 const MAX_LANE_INDEX = 1;
@@ -82,6 +83,7 @@ const KEY_BINDINGS = {
   superDash: new Set(['ShiftLeft', 'ShiftRight']),
   pause: new Set(['KeyP', 'Escape']),
   confirm: new Set(['Enter', 'Space']),
+  mute: new Set(['KeyM']),
 };
 const KEYS_WITH_BROWSER_DEFAULTS = new Set(['Space', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
@@ -113,6 +115,7 @@ const elements = {
   resultCombo: document.getElementById('result-combo'),
   resultBest: document.getElementById('result-best'),
   restartButton: document.getElementById('restart-button'),
+  muteButton: document.getElementById('mute-button'),
 };
 const overlayScreens = [elements.menuScreen, elements.pauseScreen, elements.gameOverScreen];
 
@@ -121,6 +124,8 @@ const spawner = createSpawner(world.scene);
 const player = createPlayerModel();
 player.root.rotation.y = Math.PI;
 world.scene.add(player.root);
+
+const audio = createAudioEngine();
 
 const baseFieldOfView = world.camera.fov;
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -299,6 +304,7 @@ function changeLane(direction) {
   }
   playerState.laneBeforeSwitch = playerState.targetLane;
   playerState.targetLane = nextLane;
+  audio.playLaneSwitch(direction);
 }
 
 function jump() {
@@ -308,12 +314,14 @@ function jump() {
   playerState.verticalVelocity = GAME_CONFIG.jumpVelocity;
   playerState.slideSecondsLeft = 0;
   playerState.isSlideQueuedForLanding = false;
+  audio.playJump();
 }
 
 function slide() {
   if (currentPhase !== PHASE.playing) {
     return;
   }
+  audio.playSlide();
   if (isPlayerGrounded()) {
     playerState.slideSecondsLeft = GAME_CONFIG.slideDuration;
     return;
@@ -329,12 +337,14 @@ function activateSuperDash() {
   runState.superDashSecondsLeft = GAME_CONFIG.superDashDuration;
   showSpeech('超级冲刺！谁也别拦我！');
   addCameraShake(0.25);
+  audio.playSuperDash();
 }
 
 function eatIceCream(iceCream) {
   spawner.removeIceCream(iceCream);
 
   const wasSuperDashReady = isSuperDashReady();
+  const multiplierBeforePickup = computeComboMultiplier();
   const isComboContinued = runState.secondsSinceLastIceCream <= GAME_CONFIG.comboWindowSeconds;
   runState.comboCount = isComboContinued ? runState.comboCount + 1 : 1;
   runState.bestComboCount = Math.max(runState.bestComboCount, runState.comboCount);
@@ -351,8 +361,11 @@ function eatIceCream(iceCream) {
   playerState.eatAnimationSecondsLeft = EAT_ANIMATION_SECONDS;
   showPopup(`+${earnedPoints}`);
   bumpComboBadge();
+  const isMultiplierUp = isComboContinued && computeComboMultiplier() > multiplierBeforePickup;
+  audio.playEat(runState.comboCount, isMultiplierUp);
 
   if (!wasSuperDashReady && isSuperDashReady()) {
+    audio.playEnergyFull();
     showSpeech('甜度满了，放大招！');
   } else if (runState.comboCount % SPEECH_EVERY_COMBO_COUNT === 0) {
     showSpeech(pickRandomSpeechLine());
@@ -364,6 +377,7 @@ function smashObstacle(obstacle) {
   const earnedPoints = GAME_CONFIG.pointsPerSmash * computeComboMultiplier();
   runState.bonusPoints += earnedPoints;
   showPopup(`撞飞 +${earnedPoints}`);
+  audio.playSmash(obstacle.type === 'bus');
   if (obstacle.type === 'bus') {
     showSpeech('大巴也拦不住我！');
     addCameraShake(0.5);
@@ -376,6 +390,7 @@ function bounceBackFromSideHit(obstacle) {
   playerState.targetLane = playerState.laneBeforeSwitch;
   playerState.laneBeforeSwitch = obstacle.laneIndex;
   addCameraShake(0.2);
+  audio.playSideBump();
 }
 
 function crashInto(obstacle) {
@@ -385,6 +400,7 @@ function crashInto(obstacle) {
   runState.dashSecondsLeft = 0;
   addCameraShake(0.6);
   showSpeech('哎哟！');
+  audio.playCrash();
 }
 
 function advanceTimers(stepSeconds) {
@@ -411,6 +427,9 @@ function updatePlayerPhysics(stepSeconds) {
     if (playerState.positionY <= 0) {
       playerState.positionY = 0;
       playerState.verticalVelocity = 0;
+      if (currentPhase === PHASE.playing) {
+        audio.playLand();
+      }
       if (playerState.isSlideQueuedForLanding) {
         playerState.isSlideQueuedForLanding = false;
         playerState.slideSecondsLeft = GAME_CONFIG.slideDuration;
@@ -693,6 +712,9 @@ function startGame() {
     document.activeElement.blur();
   }
   showSpeech('冲冲冲！');
+  audio.unlock();
+  audio.playStart();
+  audio.startMusic();
 }
 
 function pauseGame() {
@@ -700,6 +722,7 @@ function pauseGame() {
     return;
   }
   currentPhase = PHASE.paused;
+  audio.setPaused(true);
   showOnlyOverlay(elements.pauseScreen);
   elements.resumeButton.focus({ preventScroll: true });
 }
@@ -709,6 +732,7 @@ function resumeGame() {
     return;
   }
   currentPhase = PHASE.playing;
+  audio.setPaused(false);
   showOnlyOverlay(null);
   elements.resumeButton.blur();
 }
@@ -730,6 +754,7 @@ function showGameOver() {
   elements.resultBest.textContent = isNewBestScore ? '新纪录！' : `最高分 ${bestScore}`;
   elements.menuBest.textContent = String(bestScore);
 
+  audio.playGameOver(isNewBestScore);
   showOnlyOverlay(elements.gameOverScreen);
   gameOverShownAtMs = performance.now();
   elements.restartButton.focus({ preventScroll: true });
@@ -739,6 +764,11 @@ function handleKeyDown(event) {
   const keyCode = event.code;
   if (KEYS_WITH_BROWSER_DEFAULTS.has(keyCode)) {
     event.preventDefault();
+  }
+  audio.unlock();
+  if (KEY_BINDINGS.mute.has(keyCode) && !event.repeat) {
+    toggleMute();
+    return;
   }
 
   if (currentPhase === PHASE.menu || currentPhase === PHASE.gameOver) {
@@ -784,6 +814,7 @@ function isEventFromButton(event) {
 }
 
 function handleTouchStart(event) {
+  audio.unlock();
   if (currentPhase !== PHASE.playing || isEventFromButton(event)) {
     return;
   }
@@ -850,6 +881,43 @@ elements.superButton.addEventListener('click', () => {
   activateSuperDash();
   elements.superButton.blur();
 });
+elements.muteButton.addEventListener('click', () => {
+  audio.unlock();
+  toggleMute();
+  elements.muteButton.blur();
+});
+
+function renderMuteButton(isMuted) {
+  elements.muteButton.textContent = isMuted ? '音效：关' : '音效：开';
+  elements.muteButton.setAttribute('aria-pressed', String(isMuted));
+}
+
+function toggleMute() {
+  const isMutedNow = audio.toggleMuted();
+  renderMuteButton(isMutedNow);
+  if (!isMutedNow) {
+    audio.playButton();
+  }
+}
+
+function computeRunAudioMode() {
+  if (currentPhase !== PHASE.playing) {
+    return RUN_AUDIO_MODE.idle;
+  }
+  if (isSuperDashActive()) {
+    return RUN_AUDIO_MODE.superDash;
+  }
+  if (isDashActive()) {
+    return RUN_AUDIO_MODE.dash;
+  }
+  return RUN_AUDIO_MODE.running;
+}
+
+function updateRunAudio() {
+  const speedRange = GAME_CONFIG.maxBaseSpeed - GAME_CONFIG.baseSpeed;
+  const speedRatio = speedRange > 0 ? (computeBaseSpeed() - GAME_CONFIG.baseSpeed) / speedRange : 0;
+  audio.updateRunState(computeRunAudioMode(), speedRatio);
+}
 
 function advancePhase(frameSeconds) {
   switch (currentPhase) {
@@ -882,10 +950,12 @@ function runFrame(frameTimestampMs) {
     advancePhase(frameSeconds);
     animatePlayer(frameSeconds);
     updateCamera(frameSeconds);
+    updateRunAudio();
   }
   renderHud();
   world.renderer.render(world.scene, world.camera);
 }
 
 elements.menuBest.textContent = String(bestScore);
+renderMuteButton(audio.isMuted());
 world.renderer.setAnimationLoop(runFrame);

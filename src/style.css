@@ -49,6 +49,14 @@ html, body {
   color: #fff; background: linear-gradient(180deg, #ffb300, #e65100); box-shadow: 0 5px 0 #9a3b00;
 }
 .super-button:disabled { opacity: 0.45; }
+
+.mute-button {
+  position: fixed; left: 18px; bottom: 96px; z-index: 10; padding: 8px 14px; cursor: pointer;
+  border: 2px solid #6d3b12; border-radius: 999px; font: inherit; font-size: 14px; font-weight: 800;
+  color: #5a3217; background: rgba(255, 255, 255, 0.9); box-shadow: 0 3px 0 #6d3b12;
+}
+.mute-button[aria-pressed="true"] { color: #8d6e63; background: rgba(239, 227, 214, 0.9); }
+.mute-button:focus-visible { outline: 3px solid #1565c0; outline-offset: 3px; }
 @media (pointer: coarse) { .super-button { display: block; } }
 
 .speech-bubble {
