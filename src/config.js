@@ -1,0 +1,42 @@
+export const GAME_CONFIG = {
+  laneWidth: 2.4,
+  laneCount: 3,
+  baseSpeed: 16,
+  maxBaseSpeed: 34,
+  speedGainPerSecond: 0.2,
+  laneSwitchSharpness: 16,
+  jumpVelocity: 11.5,
+  gravity: 32,
+  fastFallVelocity: 20,
+  slideDuration: 0.75,
+  dashDuration: 1.1,
+  dashSpeedBonus: 14,
+  superDashDuration: 5,
+  superDashSpeedBonus: 22,
+  energyPerIceCream: 12,
+  magnetRange: 22,
+  comboWindowSeconds: 2.2,
+  maxComboMultiplier: 10,
+  groundTileLength: 30,
+  groundTileCount: 8,
+  spawnAheadDistance: 160,
+  despawnBehindDistance: 12,
+  safeStartDistance: 55,
+  difficultyRampSeconds: 120,
+  pointsPerMeter: 1,
+  pointsPerIceCream: 50,
+  pointsPerSmash: 120,
+};
+
+export const LANE_INDICES = [-1, 0, 1];
+
+export const SPEECH_LINES = [
+  '再来一根！',
+  '这波冲了！',
+  '甜到飞起！',
+  '谁也拦不住我',
+  '冲冲冲！',
+  '吃完这根就收手',
+  '这速度，稳了',
+  '巧乐兹管够',
+];
