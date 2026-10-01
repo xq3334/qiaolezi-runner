@@ -15,6 +15,7 @@
         <div class="hud-card"><span class="hud-label">分数</span><span id="hud-score" class="hud-value">0</span></div>
         <div class="hud-card"><span class="hud-label">距离</span><span id="hud-distance" class="hud-value">0m</span></div>
         <div class="hud-card"><span class="hud-label">巧乐兹</span><span id="hud-ice-creams" class="hud-value">0</span></div>
+        <div class="hud-card hud-difficulty-card"><span class="hud-label">难度</span><span id="hud-difficulty" class="hud-value">简单</span></div>
       </div>
       <div id="hud-combo" class="hud-combo">连吃 x1</div>
       <div id="energy-panel" class="energy-panel">
@@ -48,8 +49,17 @@
           <span><kbd>M</kbd> 静音</span>
         </div>
         <p class="mobile-tip">手机：上下左右滑动操作，双击屏幕放超级冲刺</p>
+        <div class="difficulty-picker" role="group" aria-label="选择难度">
+          <button class="difficulty-option" type="button" data-difficulty="easy" aria-pressed="true">
+            <strong>简单</strong><span>巧乐兹管够，速度有上限</span>
+          </button>
+          <button class="difficulty-option difficulty-option-hard" type="button" data-difficulty="hard" aria-pressed="false">
+            <strong>困难</strong><span>巧乐兹稀少，越跑越快</span>
+          </button>
+        </div>
+        <p class="hint">按 <kbd>1</kbd> / <kbd>2</kbd> 切换难度</p>
         <button id="start-button" class="primary-button" type="button">开冲</button>
-        <p class="best-line">最高分 <span id="menu-best">0</span></p>
+        <p id="menu-best" class="best-line">最高分 0</p>
       </div>
     </section>
 
@@ -72,8 +82,12 @@
           <div class="result-item"><span>最高连吃</span><strong id="result-combo">0</strong></div>
         </div>
         <p id="result-best" class="best-line"></p>
+        <div class="difficulty-picker difficulty-picker-compact" role="group" aria-label="下一局难度">
+          <button class="difficulty-option" type="button" data-difficulty="easy" aria-pressed="true"><strong>简单</strong></button>
+          <button class="difficulty-option difficulty-option-hard" type="button" data-difficulty="hard" aria-pressed="false"><strong>困难</strong></button>
+        </div>
         <button id="restart-button" class="primary-button" type="button">再来一局</button>
-        <p class="hint">按 Enter 或空格也能重开</p>
+        <p class="hint">按 Enter 或空格也能重开，<kbd>1</kbd> / <kbd>2</kbd> 切换难度</p>
       </div>
     </section>
 

@@ -121,6 +121,20 @@ kbd {
 .primary-button:active { transform: translateY(3px); box-shadow: 0 3px 0 #9a3b00; }
 .primary-button:focus-visible, .super-button:focus-visible { outline: 3px solid #1565c0; outline-offset: 3px; }
 .best-line { margin-top: 10px; font-size: 14px; color: #8d6e63; }
+.difficulty-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.difficulty-option {
+  display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; cursor: pointer;
+  font: inherit; color: #5a3217; background: #fff1e0; border: 3px solid #e0c3a3; border-radius: 14px;
+}
+.difficulty-option strong { font-size: 18px; }
+.difficulty-option span { font-size: 12px; color: #8d6e63; }
+.difficulty-option:hover { filter: brightness(1.04); }
+.difficulty-option.selected { background: #fff8e1; border-color: #e65100; box-shadow: 0 3px 0 #9a3b00; }
+.difficulty-option-hard.selected { background: #ffebee; border-color: #c62828; box-shadow: 0 3px 0 #7f0000; }
+.difficulty-option:focus-visible { outline: 3px solid #1565c0; outline-offset: 3px; }
+.difficulty-picker-compact .difficulty-option { padding: 6px 10px; }
+.difficulty-picker-compact .difficulty-option strong { font-size: 16px; }
+.hud.hard-mode .hud-difficulty-card .hud-value { color: #c62828; }
 .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .result-item { padding: 10px; background: #fff1e0; border-radius: 12px; }
 .result-item span { display: block; font-size: 12px; color: #8d6e63; }

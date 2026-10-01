@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
-import { GAME_CONFIG, SPEECH_LINES } from './config.js';
+import { GAME_CONFIG, SPEECH_LINES, DIFFICULTY_PRESETS, DEFAULT_DIFFICULTY_ID } from './config.js';
 import { createWorld } from './world.js';
 import { createSpawner, getLaneX } from './obstacles.js';
 import { createPlayerModel } from './models.js';
@@ -43,7 +43,7 @@ const DOUBLE_TAP_WINDOW_MS = 320;
 const SPEECH_VISIBLE_MS = 1400;
 const POPUP_LIFETIME_MS = 900;
 const POPUP_HORIZONTAL_SPREAD_PIXELS = 120;
-const BEST_SCORE_STORAGE_KEY = 'qiaolezi-runner-best-score';
+const DIFFICULTY_STORAGE_KEY = 'qiaolezi-runner-difficulty';
 
 const CAMERA_FOLLOW_SHARPNESS = 5;
 const CAMERA_SHAKE_DECAY = 6;
@@ -84,6 +84,8 @@ const KEY_BINDINGS = {
   pause: new Set(['KeyP', 'Escape']),
   confirm: new Set(['Enter', 'Space']),
   mute: new Set(['KeyM']),
+  pickEasy: new Set(['Digit1', 'Numpad1']),
+  pickHard: new Set(['Digit2', 'Numpad2']),
 };
 const KEYS_WITH_BROWSER_DEFAULTS = new Set(['Space', 'Enter', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
 
@@ -116,11 +118,17 @@ const elements = {
   resultBest: document.getElementById('result-best'),
   restartButton: document.getElementById('restart-button'),
   muteButton: document.getElementById('mute-button'),
+  hudDifficulty: document.getElementById('hud-difficulty'),
+  difficultyOptions: Array.from(document.querySelectorAll('[data-difficulty]')),
 };
 const overlayScreens = [elements.menuScreen, elements.pauseScreen, elements.gameOverScreen];
 
+// The selected preset is what the menu shows; the active preset only changes when a new run starts.
+let selectedDifficulty = loadSelectedDifficulty();
+let activeDifficulty = selectedDifficulty;
+
 const world = createWorld(elements.canvasContainer);
-const spawner = createSpawner(world.scene);
+const spawner = createSpawner(world.scene, activeDifficulty);
 const player = createPlayerModel();
 player.root.rotation.y = Math.PI;
 world.scene.add(player.root);
@@ -167,7 +175,7 @@ let runCyclePhase = 0;
 let animationClockSeconds = 0;
 let gameOverShownAtMs = 0;
 let speechHideTimeoutId = 0;
-let bestScore = loadBestScore();
+let bestScore = loadBestScore(activeDifficulty);
 
 const cameraRig = {
   basePosition: MENU_CAMERA_POSITION.clone(),
@@ -178,18 +186,36 @@ const desiredCameraPosition = new THREE.Vector3();
 const desiredCameraLookTarget = new THREE.Vector3();
 const magnetTargetPosition = new THREE.Vector3();
 
-function loadBestScore() {
+function loadSelectedDifficulty() {
   try {
-    return Number(window.localStorage.getItem(BEST_SCORE_STORAGE_KEY)) || 0;
+    const storedDifficultyId = window.localStorage.getItem(DIFFICULTY_STORAGE_KEY);
+    return DIFFICULTY_PRESETS[storedDifficultyId] ?? DIFFICULTY_PRESETS[DEFAULT_DIFFICULTY_ID];
+  } catch {
+    return DIFFICULTY_PRESETS[DEFAULT_DIFFICULTY_ID];
+  }
+}
+
+function saveSelectedDifficulty(difficultyPreset) {
+  try {
+    window.localStorage.setItem(DIFFICULTY_STORAGE_KEY, difficultyPreset.id);
+  } catch {
+    // Losing persistence is acceptable when storage is unavailable.
+  }
+}
+
+// Each difficulty keeps its own record so a hard-mode score is never compared against easy mode.
+function loadBestScore(difficultyPreset) {
+  try {
+    return Number(window.localStorage.getItem(difficultyPreset.bestScoreStorageKey)) || 0;
   } catch {
     // Storage can be blocked (privacy mode, sandboxed frames); the best score then only lives in memory.
     return 0;
   }
 }
 
-function saveBestScore(score) {
+function saveBestScore(difficultyPreset, score) {
   try {
-    window.localStorage.setItem(BEST_SCORE_STORAGE_KEY, String(score));
+    window.localStorage.setItem(difficultyPreset.bestScoreStorageKey, String(score));
   } catch {
     // Losing persistence is acceptable when storage is unavailable.
   }
@@ -205,8 +231,18 @@ function computeComboMultiplier() {
 }
 
 function computeBaseSpeed() {
-  const acceleratedSpeed = GAME_CONFIG.baseSpeed + GAME_CONFIG.speedGainPerSecond * runState.elapsedSeconds;
-  return Math.min(GAME_CONFIG.maxBaseSpeed, acceleratedSpeed);
+  const elapsedSeconds = runState.elapsedSeconds;
+  const acceleratedSpeed =
+    activeDifficulty.startSpeed +
+    activeDifficulty.speedGainPerSecond * elapsedSeconds +
+    0.5 * activeDifficulty.speedAccelerationPerSecondSquared * elapsedSeconds * elapsedSeconds;
+  return Math.min(activeDifficulty.maxBaseSpeed, acceleratedSpeed);
+}
+
+// Normalized against easy mode's speed range so music tempo and wind peak at the same feel in both modes.
+function computeSpeedRatio() {
+  const speedRange = GAME_CONFIG.maxBaseSpeed - GAME_CONFIG.baseSpeed;
+  return speedRange > 0 ? (computeBaseSpeed() - GAME_CONFIG.baseSpeed) / speedRange : 0;
 }
 
 function computeRunSpeed() {
@@ -220,7 +256,7 @@ function computeRunSpeed() {
 }
 
 function computeDifficulty() {
-  return Math.min(1, runState.elapsedSeconds / GAME_CONFIG.difficultyRampSeconds);
+  return Math.min(1, runState.elapsedSeconds / activeDifficulty.difficultyRampSeconds);
 }
 
 function isDashActive() {
@@ -692,8 +728,38 @@ function renderHud() {
   elements.speedLines.classList.toggle('dash', isRunning && !superDashActive && isDashActive());
 }
 
+function computeSelectedDifficultyBestScore() {
+  // The in-memory record is authoritative for the active mode in case storage is unavailable.
+  return selectedDifficulty === activeDifficulty ? bestScore : loadBestScore(selectedDifficulty);
+}
+
+function renderDifficultySelection() {
+  for (const difficultyOption of elements.difficultyOptions) {
+    const isSelected = difficultyOption.dataset.difficulty === selectedDifficulty.id;
+    difficultyOption.classList.toggle('selected', isSelected);
+    difficultyOption.setAttribute('aria-pressed', String(isSelected));
+  }
+  elements.menuBest.textContent = `${selectedDifficulty.label}模式最高分 ${computeSelectedDifficultyBestScore()}`;
+}
+
+function selectDifficulty(difficultyId) {
+  const canChangeDifficulty = currentPhase === PHASE.menu || currentPhase === PHASE.gameOver;
+  const nextDifficulty = DIFFICULTY_PRESETS[difficultyId];
+  if (!canChangeDifficulty || !nextDifficulty || nextDifficulty === selectedDifficulty) {
+    return;
+  }
+  selectedDifficulty = nextDifficulty;
+  saveSelectedDifficulty(selectedDifficulty);
+  renderDifficultySelection();
+  audio.playButton();
+}
+
 function resetRun() {
-  spawner.reset();
+  activeDifficulty = selectedDifficulty;
+  bestScore = loadBestScore(activeDifficulty);
+  spawner.reset(activeDifficulty);
+  elements.hudDifficulty.textContent = activeDifficulty.label;
+  elements.hud.classList.toggle('hard-mode', activeDifficulty.id === 'hard');
   Object.assign(runState, createInitialRunState());
   Object.assign(playerState, createInitialPlayerState());
   elements.popupLayer.replaceChildren();
@@ -743,7 +809,7 @@ function showGameOver() {
   const isNewBestScore = finalScore > bestScore;
   if (isNewBestScore) {
     bestScore = finalScore;
-    saveBestScore(bestScore);
+    saveBestScore(activeDifficulty, bestScore);
   }
 
   elements.gameOverTitle.textContent = GAME_OVER_TITLES[runState.crashedObstacleType] ?? '再来一局';
@@ -751,8 +817,11 @@ function showGameOver() {
   elements.resultDistance.textContent = `${Math.floor(runState.distanceMeters)}m`;
   elements.resultIceCreams.textContent = String(runState.iceCreamsEaten);
   elements.resultCombo.textContent = String(runState.bestComboCount);
-  elements.resultBest.textContent = isNewBestScore ? '新纪录！' : `最高分 ${bestScore}`;
-  elements.menuBest.textContent = String(bestScore);
+  const difficultyLabel = activeDifficulty.label;
+  elements.resultBest.textContent = isNewBestScore
+    ? `${difficultyLabel}模式新纪录！`
+    : `${difficultyLabel}模式最高分 ${bestScore}`;
+  renderDifficultySelection();
 
   audio.playGameOver(isNewBestScore);
   showOnlyOverlay(elements.gameOverScreen);
@@ -772,6 +841,14 @@ function handleKeyDown(event) {
   }
 
   if (currentPhase === PHASE.menu || currentPhase === PHASE.gameOver) {
+    if (KEY_BINDINGS.pickEasy.has(keyCode)) {
+      selectDifficulty('easy');
+      return;
+    }
+    if (KEY_BINDINGS.pickHard.has(keyCode)) {
+      selectDifficulty('hard');
+      return;
+    }
     const hasRestartDelayPassed =
       currentPhase === PHASE.menu || performance.now() - gameOverShownAtMs > RESTART_INPUT_DELAY_MS;
     if (KEY_BINDINGS.confirm.has(keyCode) && !event.repeat && hasRestartDelayPassed) {
@@ -881,6 +958,13 @@ elements.superButton.addEventListener('click', () => {
   activateSuperDash();
   elements.superButton.blur();
 });
+for (const difficultyOption of elements.difficultyOptions) {
+  difficultyOption.addEventListener('click', () => {
+    audio.unlock();
+    selectDifficulty(difficultyOption.dataset.difficulty);
+    difficultyOption.blur();
+  });
+}
 elements.muteButton.addEventListener('click', () => {
   audio.unlock();
   toggleMute();
@@ -914,9 +998,7 @@ function computeRunAudioMode() {
 }
 
 function updateRunAudio() {
-  const speedRange = GAME_CONFIG.maxBaseSpeed - GAME_CONFIG.baseSpeed;
-  const speedRatio = speedRange > 0 ? (computeBaseSpeed() - GAME_CONFIG.baseSpeed) / speedRange : 0;
-  audio.updateRunState(computeRunAudioMode(), speedRatio);
+  audio.updateRunState(computeRunAudioMode(), computeSpeedRatio());
 }
 
 function advancePhase(frameSeconds) {
@@ -956,6 +1038,6 @@ function runFrame(frameTimestampMs) {
   world.renderer.render(world.scene, world.camera);
 }
 
-elements.menuBest.textContent = String(bestScore);
+renderDifficultySelection();
 renderMuteButton(audio.isMuted());
 world.renderer.setAnimationLoop(runFrame);

@@ -137,10 +137,11 @@ function computeRowGap(baseSpeed, difficulty) {
   return Math.max(16, baseSpeed * secondsBetweenRows);
 }
 
-export function createSpawner(scene) {
+export function createSpawner(scene, initialDifficultyPreset) {
   const obstacles = [];
   const iceCreams = [];
   let nextRowZ = -GAME_CONFIG.safeStartDistance;
+  let difficultyPreset = initialDifficultyPreset;
 
   function addObstacle(type, laneIndex, rowZ) {
     const dimensions = OBSTACLE_TYPES[type];
@@ -173,22 +174,30 @@ export function createSpawner(scene) {
     const blockedLanes = shuffledLanes.slice(0, obstacleCount);
     const freeLanes = shuffledLanes.slice(obstacleCount);
 
+    const bonusChanceScale = difficultyPreset.bonusIceCreamChanceScale;
+    const overOrUnderChance = 0.35 * bonusChanceScale;
+    const beforeImpactChance = 0.6 * bonusChanceScale;
+
     for (const laneIndex of blockedLanes) {
       const obstacleType = pickObstacleType(difficulty);
       addObstacle(obstacleType, laneIndex, rowZ);
       const bonusRoll = Math.random();
-      if (obstacleType === 'barrier' && bonusRoll < 0.35) {
+      if (obstacleType === 'barrier' && bonusRoll < overOrUnderChance) {
         addIceCream(laneIndex, rowZ, ICE_CREAM_OVER_BARRIER_HEIGHT);
-      } else if (obstacleType === 'banner' && bonusRoll < 0.35) {
+      } else if (obstacleType === 'banner' && bonusRoll < overOrUnderChance) {
         addIceCream(laneIndex, rowZ, ICE_CREAM_UNDER_BANNER_HEIGHT);
-      } else if (obstacleType !== 'bus' && bonusRoll < 0.6) {
+      } else if (obstacleType !== 'bus' && bonusRoll < beforeImpactChance) {
         // Eating this one right before impact grants a dash that smashes the obstacle.
         addIceCream(laneIndex, rowZ + 3);
       }
     }
 
+    if (Math.random() >= difficultyPreset.iceCreamLineChance) {
+      return;
+    }
     const iceCreamLane = pickRandomItem(freeLanes);
-    const iceCreamCount = 3 + Math.floor(Math.random() * 3);
+    const iceCreamCount =
+      difficultyPreset.iceCreamLineMinCount + Math.floor(Math.random() * (difficultyPreset.iceCreamLineExtraCount + 1));
     for (let iceCreamIndex = 0; iceCreamIndex < iceCreamCount; iceCreamIndex += 1) {
       addIceCream(iceCreamLane, rowZ + 6 - iceCreamIndex * ICE_CREAM_LINE_SPACING);
     }
@@ -252,7 +261,8 @@ export function createSpawner(scene) {
     }
   }
 
-  function reset() {
+  function reset(nextDifficultyPreset = difficultyPreset) {
+    difficultyPreset = nextDifficultyPreset;
     for (const obstacle of obstacles) {
       scene.remove(obstacle.model);
     }
